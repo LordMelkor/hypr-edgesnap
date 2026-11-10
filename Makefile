@@ -8,7 +8,7 @@ LDFLAGS += -shared
 
 all: hypr-edgesnap.so
 
-hypr-edgesnap.so: main.cpp geometry.hpp
+hypr-edgesnap.so: main.cpp geometry.hpp compat.hpp
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $< -o $@
 
 # Checks that need no running compositor.

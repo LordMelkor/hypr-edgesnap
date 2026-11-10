@@ -10,7 +10,7 @@ It only snaps. Hyprland keeps owning the drag, maximize and fullscreen, so dragg
 
 The zone detection, zone geometry and preview animation come from the MIT-licensed snap module of [omarchy-windows](https://github.com/jwm3000/omarchy-windows) (`contrib/aero-snap`), cut down to snapping and reworked so keyboard and mouse share one record per window. See `LICENSE`.
 
-Tested on Hyprland 0.56.2 with a Lua config (`hyprland.lua`), which the keyboard functions need.
+Tested on Hyprland 0.56.2; also builds against 0.57.2 (`compat.hpp`) but hasn't been run on it. Needs a Lua config (`hyprland.lua`), which the keyboard functions need.
 
 ## Install
 

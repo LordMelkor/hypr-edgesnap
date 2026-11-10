@@ -21,11 +21,18 @@
 #include <hyprland/src/config/values/types/FloatValue.hpp>
 #include <hyprland/src/config/values/types/IntValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
+// Hyprland 0.57 split CWindow into backend, metadata and presentation parts.
+#if __has_include(<hyprland/src/desktop/view/window/Window.hpp>)
+#define EDGESNAP_HYPRLAND_057
+#include <hyprland/src/desktop/view/window/Window.hpp>
+#else
 #include <hyprland/src/desktop/view/Window.hpp>
+#endif
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
 #include <hyprland/src/layout/space/Space.hpp>
+#include <hyprland/src/layout/target/Target.hpp>
 #include <hyprland/src/layout/supplementary/DragController.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
@@ -35,6 +42,8 @@
 #include <hyprland/src/render/pass/RectPassElement.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 #include <lua.hpp>
+
+#include "compat.hpp"
 
 #include <linux/input-event-codes.h>
 
@@ -171,8 +180,8 @@ namespace {
     // Floating, mapped, on a regular workspace and not in a group: the same
     // set of windows the keyboard helper this replaces acted on.
     bool eligible(const PHLWINDOW& window) {
-        return Desktop::View::validMapped(window) && window->m_target && window->m_target->floating() && !window->m_group && window->m_workspace &&
-            window->workspaceID() > 0;
+        return Desktop::View::validMapped(window) && window->layoutTarget() && window->layoutTarget()->floating() && !EdgesnapCompat::grouped(window) &&
+            EdgesnapCompat::regularWorkspace(window);
     }
 
     PHLWORKSPACE activeWorkspace(const PHLMONITOR& monitor) {
@@ -310,11 +319,12 @@ namespace {
     CBox restoredBox(const PHLWINDOW& window, const SSnapRecord& record) {
         CBox       box     = record.restoreBox;
         const auto monitor = window->m_monitor.lock();
-        if (!monitor || !window->m_workspace || !window->m_workspace->m_space)
+        const auto space   = EdgesnapCompat::space(window->m_workspace);
+        if (!monitor || !space)
             return box;
 
         box.translate(monitor->m_position - record.monitorOrigin);
-        const CBox area = window->m_workspace->m_space->workArea(true);
+        const CBox area = space->workArea(true);
         return toBox(EdgeSnap::clampIntoArea(toRect(box), extentsOf(window), toRect(area)));
     }
 
@@ -327,13 +337,14 @@ namespace {
     // ---- placement ---------------------------------------------------------
 
     std::optional<SPlacement> placementFor(const SP<Layout::ITarget>& target, const PHLWORKSPACE& workspace, const PHLMONITOR& monitor, const Zone zone) {
-        if (!target || !monitor || !workspace || !workspace->m_space || zone == Zone::None || !eligible(target->window()))
+        const auto space = EdgesnapCompat::space(workspace);
+        if (!target || !monitor || !space || zone == Zone::None || !eligible(target->window()))
             return std::nullopt;
 
         const bool gapsEnabled = state->config.gaps->value();
         // The floating work area keeps reserved regions (the bar) but not
         // gaps_out; the tiled one includes gaps_out.
-        const CBox workArea = workspace->m_space->workArea(zone == Zone::Maximize || !gapsEnabled);
+        const CBox workArea = space->workArea(zone == Zone::Maximize || !gapsEnabled);
         const int  columns  = EdgeSnap::columnsForMonitor(toRect(monitor->logicalBox()), state->config.columns->value());
 
         static auto  gapsInValue   = CConfigValue<Config::IComplexConfigValue>("general:gaps_in");
@@ -425,7 +436,7 @@ namespace {
 
         const CBox box = restoredBox(window, *record);
         forgetRecord(window);
-        setGeometry(window->m_target, box);
+        setGeometry(window->layoutTarget(), box);
         return true;
     }
 
@@ -435,7 +446,7 @@ namespace {
         if (!eligible(window) || isTrueFullscreen(window))
             return false;
 
-        const auto target       = window->m_target;
+        const auto target       = window->layoutTarget();
         const bool wasMaximized = isMaximized(window);
         // Leave maximize first: the restored decorations decide the client
         // size, and Hyprland's own restore geometry is the pre-snap box.
@@ -572,7 +583,7 @@ namespace {
         state->pendingApply.reset();
         state->x11Pending = nullptr;
         state->x11Timer->updateTimeout(std::nullopt);
-        if (!window || !window->m_isX11) {
+        if (!window || !EdgesnapCompat::isX11(window)) {
             state->pendingApply = g_pEventLoopManager->doLaterLock(std::move(fn));
             return;
         }
@@ -617,11 +628,11 @@ namespace {
         });
     }
 
-    void onRenderStage(const eRenderStage stage) {
-        if (!state || stage != RENDER_POST_WINDOWS || !state->preview)
+    void onRenderStage(const EdgesnapCompat::RenderStageEvent& event) {
+        if (!state || EdgesnapCompat::stage(event) != RENDER_POST_WINDOWS || !state->preview)
             return;
 
-        const auto monitor = g_pHyprRenderer->renderData().pMonitor.lock();
+        const auto monitor = EdgesnapCompat::renderMonitor(event);
         if (!monitor || state->preview->monitor.lock() != monitor)
             return;
 
@@ -649,7 +660,7 @@ namespace {
             borderData.box   = outer;
             borderData.color = borderColor.modifyA(static_cast<float>(borderColor.a) * opacity);
             borderData.round = rounding;
-            g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(borderData));
+            EdgesnapCompat::addPassElement(event, makeUnique<CRectPassElement>(borderData));
         }
 
         CBox inner{outer.x + border, outer.y + border, outer.w - border * 2, outer.h - border * 2};
@@ -663,7 +674,7 @@ namespace {
         fillData.round = std::max(0, rounding - border);
         fillData.blur  = state->config.previewBlur->value();
         fillData.blurA = 0.48F * opacity;
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(fillData));
+        EdgesnapCompat::addPassElement(event, makeUnique<CRectPassElement>(fillData));
     }
 
     template <typename T, typename... Args>
@@ -735,7 +746,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     state->mouseMoveListener   = Event::bus()->m_events.input.mouse.move.listen([](Vector2D cursor, Event::SCallbackInfo& info) { onMouseMove(cursor, info); });
     state->mouseButtonListener = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
-    state->renderListener      = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });
+    state->renderListener      = Event::bus()->m_events.render.stage.listen([](EdgesnapCompat::RenderStageEvent event) { onRenderStage(event); });
     state->windowDestroyListener = Event::bus()->m_events.window.destroy.listen([](PHLWINDOWREF window) {
         if (!state)
             return;

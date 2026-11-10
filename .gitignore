@@ -1,0 +1,5 @@
+*.so
+*.tmp
+tests/geometry
+tests/nested/vptr
+tests/nested/*-protocol.[ch]

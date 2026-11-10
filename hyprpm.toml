@@ -1,0 +1,9 @@
+[repository]
+name = "hypr-edgesnap"
+authors = ["LordMelkor"]
+
+[hypr-edgesnap]
+description = "Edge snap zones and drag-away restore for floating windows"
+authors = ["LordMelkor"]
+output = "hypr-edgesnap.so"
+build = ["make all"]

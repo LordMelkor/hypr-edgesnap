@@ -1,0 +1,45 @@
+# Builds and tests hypr-edgesnap on every push and weekly against two Hyprlands:
+#   - 0.56.2, from an Arch Linux Archive snapshot (the version Omarchy shipped
+#     when this was written), so the supported release keeps building;
+#   - Arch's latest, as an early warning. hypr-edgesnap builds against Hyprland
+#     internals (drag controller, fullscreen controller, layout space, render
+#     pass); when a release changes them this usually fails before that
+#     release reaches an Omarchy machine (not guaranteed: it can land between
+#     runs). Neither job loads the plugin or tests dragging.
+name: ci
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: hyprland-0.56.2
+            snapshot: "2026/10/20"
+            expect: "0.56.2-"
+          - name: hyprland-latest
+            snapshot: ""
+            expect: ""
+    name: ${{ matrix.name }}
+    steps:
+      - name: Pin repositories to the snapshot
+        if: matrix.snapshot != ''
+        run: echo 'Server = https://archive.archlinux.org/repos/${{ matrix.snapshot }}/$repo/os/$arch' > /etc/pacman.d/mirrorlist
+      - name: Install Hyprland and build tools
+        run: pacman -Syyuu --noconfirm --needed base-devel git hyprland pixman libdrm libinput systemd-libs wayland libxkbcommon python
+      - uses: actions/checkout@v4
+      - name: Hyprland version under test
+        run: |
+          pacman -Q hyprland
+          # A pinned job must test the version it's named for, not whatever the snapshot resolves to.
+          if [ -n "${{ matrix.expect }}" ]; then pacman -Q hyprland | grep -qF " ${{ matrix.expect }}"; fi
+      - name: Build and test
+        run: make test

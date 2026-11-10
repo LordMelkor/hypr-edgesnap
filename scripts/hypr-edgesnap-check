@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Observe hyprpm state and actual loaded presence; never build/load/reload.
+
+--wait SECONDS  when the plugin is enabled and built for the running Hyprland
+                but not yet listed, re-query the plugin list once per second
+                for up to SECONDS (default 0). Nothing else is retried.
+--notify        send a desktop notification when the status is nonzero.
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import pwd
+import subprocess
+import sys
+import time
+import tomllib
+
+NAME = 'hypr-edgesnap'
+FALLBACK = 'Keyboard snapping falls back to the configured helper; drag snapping is off.'
+
+
+def assess(repo, cache_abi, installed_abi, running_abi, loaded):
+    plugin = repo.get(NAME, {})
+    if not plugin.get('enabled', False):
+        return 0, f'{NAME} is disabled; no load expected.'
+    if plugin.get('failed', False):
+        return 1, f'{NAME} build failed. Fix the source and run hyprpm update. {FALLBACK}'
+    if cache_abi != running_abi:
+        if cache_abi and cache_abi == installed_abi:
+            return 2, f'{NAME} is built for installed Hyprland. Start a new session to load it. {FALLBACK}'
+        return 1, f'{NAME} headers/build are stale. Run hyprpm update, then restart the session if required. {FALLBACK}'
+    if NAME not in loaded:
+        return 1, f'{NAME} is enabled but not loaded. Inspect hyprctl configerrors and plugin-load output. {FALLBACK}'
+    return 0, f'{NAME} is loaded. This checks presence, not behavior or code replacement.'
+
+
+def json_command(*args):
+    return json.loads(subprocess.check_output(args, text=True, stderr=subprocess.PIPE, timeout=10))
+
+
+def loaded_plugins():
+    return {p['name'] for p in json_command('hyprctl', '-j', 'plugin', 'list')}
+
+
+def cache_base():
+    # HYPR_EDGESNAP_HYPRPM_CACHE exists only so tests can point at a fake cache.
+    override = os.environ.get('HYPR_EDGESNAP_HYPRPM_CACHE')
+    if override:
+        return Path(override)
+    return Path('/var/cache/hyprpm') / pwd.getpwuid(os.getuid()).pw_name
+
+
+def check(wait=0):
+    base = cache_base()
+    repo = tomllib.loads((base / NAME / 'state.toml').read_text())
+    if not repo.get(NAME, {}).get('enabled', False):
+        return 0, f'{NAME} is disabled; no load expected.'
+    if not os.environ.get('HYPRLAND_INSTANCE_SIGNATURE'):
+        return 2, 'No Hyprland session selected. Enabled plugins will be checked at the next login.'
+    cache = tomllib.loads((base / 'state.toml').read_text())['state']['hash']
+    installed = json_command('Hyprland', '--version-json')['abiHash']
+    running = json_command('hyprctl', '-j', 'version')['abiHash']
+    loaded = loaded_plugins()
+    # At login another fragment's hyprpm reload may still be running; only
+    # waiting for it to show up is allowed here.
+    deadline = time.monotonic() + wait
+    while (NAME not in loaded and not repo[NAME].get('failed', False)
+           and cache == running and time.monotonic() < deadline):
+        time.sleep(1)
+        loaded = loaded_plugins()
+    return assess(repo, cache, installed, running, loaded)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('--wait', type=float, default=0, metavar='SECONDS')
+    parser.add_argument('--notify', action='store_true')
+    args = parser.parse_args(argv)
+    try:
+        status, message = check(args.wait)
+    except (OSError, KeyError, ValueError, subprocess.SubprocessError) as e:
+        status, message = 1, f'Cannot verify {NAME}: {e}. Check hyprpm registration and the current session. {FALLBACK}'
+    print(message)
+    if status and args.notify:
+        try:
+            subprocess.run(['notify-send', 'Hyprland plugin needs attention', message], check=False, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            pass  # the console message and exit status remain available
+    return status
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -95,6 +95,7 @@ class Nested:
                **({'HYPR_XCSD_DEBUG': '1'} if os.environ.get('HYPR_XCSD_DEBUG') else {})}
         self.windows = []
         self.proc = None
+        self.x11_display = None
         self.log = open(self.runtime / 'stdout.log', 'w')
         try:
             self.start(env)
@@ -168,11 +169,15 @@ class Nested:
         for w in self.windows:
             w.kill()
         if self.proc and self.proc.poll() is None:
-            os.killpg(self.proc.pid, signal.SIGTERM)
-            try:
-                self.proc.wait(5)
-            except subprocess.TimeoutExpired:
-                os.killpg(self.proc.pid, signal.SIGKILL)
+            # SIGKILL, not SIGTERM: a nested Hyprland 0.56.2 that has run an
+            # X11 client segfaults while shutting down (also with no plugins
+            # loaded), and the crash would be reported on the desktop.
+            os.killpg(self.proc.pid, signal.SIGKILL)
+            self.proc.wait(5)
+        if self.x11_display:  # Xwayland was killed with it; drop its socket and lock
+            n = self.x11_display.lstrip(':').split('.')[0]
+            for stale in (Path(f'/tmp/.X11-unix/X{n}'), Path(f'/tmp/.X11-unix/X{n}_'), Path(f'/tmp/.X{n}-lock')):
+                stale.unlink(missing_ok=True)
         self.log.close()
         keep = os.environ.get('EDGESNAP_KEEP_LOG')
         if keep:
@@ -346,6 +351,7 @@ def run_x11(nested, ptr):
         return
     display = nested.value('os.getenv("DISPLAY")')
     check(display.startswith(':'), 'nested Xwayland is running', display)
+    nested.x11_display = display
     env = {'PATH': os.environ['PATH'], 'HOME': str(nested.home), 'DISPLAY': display, 'EDGESNAP_NESTED': '1'}
     app = subprocess.Popen([sys.executable, '-I', str(HERE / 'x11csd.py'), 'edgesnap-x11'], env=env,
                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)

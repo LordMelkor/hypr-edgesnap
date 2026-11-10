@@ -10,7 +10,7 @@ It only snaps. Hyprland keeps owning the drag, maximize and fullscreen, so dragg
 
 The zone detection, zone geometry and preview animation come from the MIT-licensed snap module of [omarchy-windows](https://github.com/jwm3000/omarchy-windows) (`contrib/aero-snap`), cut down to snapping and reworked so keyboard and mouse share one record per window. See `LICENSE`.
 
-Tested on Hyprland 0.56.2; also builds against 0.57.2 (`compat.hpp`) but hasn't been run on it. The keyboard functions need a Lua config (`hyprland.lua`).
+Tested on Hyprland 0.56.2 (daily use) and 0.57.2 (the nested behaviour suite, with Omarchy's 0.57 titlebars and hypr-xcsd); `compat.hpp` covers the API differences. The keyboard functions need a Lua config (`hyprland.lua`).
 
 ## Install
 
@@ -91,7 +91,7 @@ make test            # geometry unit tests and health-check tests; no compositor
 make nested-test     # drag and keyboard behaviour in a throwaway nested Hyprland (see below)
 ```
 
-`make nested-test` needs a running Hyprland session and `foot`. It starts a separate Hyprland as a window of your session, hidden on a special workspace without focus by a temporary named window rule (disabled again on exit), and drives it with a virtual pointer of its own. Your cursor, focus and windows aren't touched; the script compares them before and after. It loads Omarchy's titlebar plugin when installed, and hypr-xcsd when `EDGESNAP_XCSD` points at its `.so`.
+`make nested-test` needs a running Hyprland session and `foot`. It starts a separate Hyprland as a window of your session, hidden on a special workspace without focus by a temporary named window rule (disabled again on exit), and drives it with a virtual pointer of its own. Your cursor, focus and windows aren't touched; the script compares them before and after. It loads Omarchy's titlebar plugin when installed, and hypr-xcsd when `EDGESNAP_XCSD` points at its `.so`. To test another Hyprland version, point `EDGESNAP_HYPRLAND_ROOT` at an extracted package (with its libraries in `usr/lib`) and `EDGESNAP_PLUGIN`, `EDGESNAP_TITLEBARS` and `EDGESNAP_XCSD` at plugins built for it.
 
 CI builds and runs `make test` against Hyprland 0.56.2 and Arch's latest. It never loads the plugin.
 

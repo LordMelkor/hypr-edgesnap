@@ -12,6 +12,10 @@ and the script checks that afterwards.
 
 Optional plugins loaded into the nested compositor when present:
 EDGESNAP_TITLEBARS (Omarchy's titlebar plugin) and EDGESNAP_XCSD (hypr-xcsd).
+EDGESNAP_PLUGIN overrides the plugin under test. EDGESNAP_HYPRLAND_ROOT runs
+another Hyprland as the nested compositor: an extracted package root with
+usr/bin/Hyprland, usr/bin/hyprctl and its libraries in usr/lib (plugins must be
+built against that version).
 """
 import json
 import os
@@ -30,6 +34,10 @@ PLUGIN = Path(os.environ.get('EDGESNAP_PLUGIN') or ROOT / 'hypr-edgesnap.so')
 VPTR = HERE / 'vptr'
 RULE = 'edgesnap-nested-test'
 TITLEBARS = os.environ.get('EDGESNAP_TITLEBARS', '/usr/lib/omarchy-hyprland-titlebars/titlebars.so')
+_ALT = os.environ.get('EDGESNAP_HYPRLAND_ROOT')
+NESTED_HYPRLAND = str(Path(_ALT, 'usr/bin/Hyprland')) if _ALT else 'Hyprland'
+NESTED_HYPRCTL = str(Path(_ALT, 'usr/bin/hyprctl')) if _ALT else 'hyprctl'
+NESTED_LIBS = {'LD_LIBRARY_PATH': str(Path(_ALT, 'usr/lib'))} if _ALT else {}
 BAR, BORDER = 30, 2
 TOP = BAR + BORDER  # titlebar drawn above the border (bar_precedence_over_border)
 W, H = 2560, 1080
@@ -104,7 +112,7 @@ class Nested:
             raise
 
     def start(self, env):
-        self.proc = subprocess.Popen(['Hyprland', '-c', str(HERE / 'hyprland.lua')], env=env, stdout=self.log, stderr=subprocess.STDOUT,
+        self.proc = subprocess.Popen([NESTED_HYPRLAND, '-c', str(HERE / 'hyprland.lua')], env={**env, **NESTED_LIBS}, stdout=self.log, stderr=subprocess.STDOUT,
                                      start_new_session=True, preexec_fn=lambda: __import__('resource').setrlimit(
                                          __import__('resource').RLIMIT_CORE, (0, 0)))
         for _ in range(100):
@@ -132,7 +140,7 @@ class Nested:
         self.wayland = sorted(p.name for p in self.runtime.glob('wayland-*') if not p.name.endswith('.lock'))[0]
 
     def ctl(self, *args):
-        return subprocess.run(['hyprctl', *args], env=self.env, capture_output=True, text=True, timeout=5).stdout
+        return subprocess.run([NESTED_HYPRCTL, *args], env={**self.env, **NESTED_LIBS}, capture_output=True, text=True, timeout=5).stdout
 
     def eval(self, code):
         out = self.ctl('eval', code).strip()

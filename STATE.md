@@ -11,6 +11,7 @@ read or requested.
 | Interactive drag (start, motion, release, cancel) | Hyprland drag controller; started by Super+drag, the titlebar plugin or hypr-xcsd | reads it; may end and restart it on the **same** window once (detach) |
 | Maximize / fullscreen and their restore geometry | Hyprland fullscreen controller | requests set/unset only |
 | Pre-snap geometry | **hypr-edgesnap snap record** | owns |
+| Moving a window between workspaces (push) | Omarchy's `o.workspaces`, else Hyprland | `edgesnap.lua` requests it; the plugin only reports the half (`zone()`) |
 | Snap preview | **hypr-edgesnap** | owns; render only |
 
 ## 1. Snap record (per window)
@@ -23,6 +24,8 @@ overwritten by a later snap, only consumed.
 |---|---|---|---|---|
 | FREE | Win+Left/Right | eligible, not true fullscreen, zone fits | SNAPPED(half) | unmaximize first if maximized; restoreBox = geometry after that |
 | SNAPPED | Win+Left/Right | as above | SNAPPED(half) | restoreBox kept |
+| SNAPPED(half) | helper `snap(side)`, side == half, window still at snappedBox | neighbouring workspace within the limit | SNAPPED(opposite half) on that workspace | the desktop moves the window (view follows); restoreBox kept |
+| SNAPPED(half) | as above | no neighbour (first workspace, or past `push_limit`) | unchanged | |
 | any | Win+Left/Right | zone does not fit (min size) | unchanged | re-maximize if it was maximized |
 | any | Win+Up | eligible, not true fullscreen | unchanged | native maximize; Hyprland owns its restore |
 | SNAPPED(non-max) | Win+Down | eligible | FREE | unmaximize/unfullscreen natively, then restoreBox (moved with its monitor, clamped to the usable area) |
@@ -37,6 +40,13 @@ overwritten by a later snap, only consumed.
 | any | window tiled / grouped / special workspace | | unchanged | ignored until eligible again |
 | any | plugin unload | | all removed | no window is moved |
 | any | config reload | | unchanged | |
+
+Push is done by the `edgesnap.lua` helper, not the plugin: it asks the plugin
+which half the window is on (`zone()`: `left`/`right` only while the window
+keeps its snapped box, so a moved or resized window snaps again instead), then
+moves it with the desktop's own workspace move and snaps it with the plugin.
+The record is keyed by window, so it survives the move: Win+Down and drag-away
+restore on the new workspace.
 
 Eligible: mapped, floating, not grouped, on a regular (non-special) workspace.
 

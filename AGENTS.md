@@ -11,7 +11,10 @@ hypr-xcsd, never replace them. Keep maintenance conventional through hyprpm.
 ## Invariants
 
 - Snapping only. No workspace management, titlebars, borders, resizing,
-  cascading, background services or repair loops.
+  cascading, background services or repair loops. The one exception is the
+  push in `edgesnap.lua`: the config helper asks the desktop's own
+  move-to-workspace (Omarchy's or Hyprland's) to move the window; the plugin
+  never moves windows between workspaces.
 - Hyprland owns the interactive drag, maximize/fullscreen and their restore
   geometry. The plugin may end and restart a drag once, on the same window,
   non-exclusively (detach); it never consumes a button event.

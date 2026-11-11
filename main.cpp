@@ -466,6 +466,32 @@ namespace {
         return true;
     }
 
+    // The half the focused window is still snapped to: its record's zone while
+    // it keeps the snapped box (not moved, resized or fullscreened since).
+    // Lets a config helper tell a repeated Win+Left/Right from a first one.
+    const char* keyboardZone() {
+        const auto window = focusedWindow();
+        if (!eligible(window) || Fullscreen::controller()->isFullscreen(window))
+            return nullptr;
+        const auto record = recordFor(window);
+        if (!record || !sameBox(window->layoutTarget()->position(), record->snappedBox))
+            return nullptr;
+        switch (record->zone) {
+            case Zone::LeftHalf: return "left";
+            case Zone::RightHalf: return "right";
+            default: return nullptr;
+        }
+    }
+
+    int luaZone(lua_State* L) {
+        const char* zone = state && state->config.enabled->value() ? keyboardZone() : nullptr;
+        if (zone)
+            lua_pushstring(L, zone);
+        else
+            lua_pushnil(L);
+        return 1;
+    }
+
     int luaResult(lua_State* L, const bool handled) {
         lua_pushboolean(L, handled);
         return 1;
@@ -724,7 +750,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     state = makeUnique<SPluginState>();
     try {
         registerConfig();
-        for (const auto& [name, fn] : {std::pair{"left", luaLeft}, {"right", luaRight}, {"maximize", luaMaximize}, {"restore", luaRestore}}) {
+        for (const auto& [name, fn] : {std::pair{"left", luaLeft}, {"right", luaRight}, {"maximize", luaMaximize}, {"restore", luaRestore}, {"zone", luaZone}}) {
             if (!HyprlandAPI::addLuaFunction(handle, "edgesnap", name, fn))
                 throw std::runtime_error(std::string{"hypr-edgesnap: cannot register hl.plugin.edgesnap."} + name);
         }

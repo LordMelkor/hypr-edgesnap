@@ -272,6 +272,29 @@ def run(nested, ptr, titlebars):
     check(resized[2:] == (1000, 700), 'setup: snapped window resized by hand', resized)
     check(snap('restore') == 'true' and now() == original, 'Win+Down after a manual resize still restores the original', now())
 
+    # Pushing past an edge through edgesnap.lua's helper (plain Hyprland
+    # workspaces here; Omarchy's per-monitor ones are its o.workspaces).
+    nested.eval('edgesnap_helper = dofile(%s)' % json.dumps(str(ROOT / 'edgesnap.lua')))
+    push = lambda side: nested.value(f'edgesnap_helper.snap("{side}")')
+    ws = lambda: nested.client(t)['workspace']['id']
+    zone = lambda: nested.value('hl.plugin.edgesnap.zone()')
+    check(push('right') == 'true' and now() == RIGHT_HALF and ws() == 1 and zone() == 'right', 'the helper snaps a free window to the half first', (now(), ws()))
+    check(push('right') == 'true' and ws() == 2 and now() == LEFT_HALF and zone() == 'left',
+          'pressing the same side again pushes it to the next workspace, snapped to the opposite half', (now(), ws()))
+    check(nested.value('hl.get_active_workspace().id') == '2', 'the view follows the pushed window')
+    check(push('left') == 'true' and ws() == 1 and now() == RIGHT_HALF, 'and back the other way', (now(), ws()))
+    snap('left')
+    check(push('left') == 'true' and ws() == 1 and now() == LEFT_HALF, 'no push below the first workspace', (now(), ws()))
+    nested.eval('edgesnap_helper.push_limit = 1')
+    snap('right')
+    check(push('right') == 'true' and ws() == 1 and now() == RIGHT_HALF, 'no push past push_limit', (now(), ws()))
+    nested.eval('edgesnap_helper.push_limit = 5')
+    nested.eval('hl.dispatch(hl.dsp.window.resize({ x = 1000, y = 700, relative = false }))')
+    check(zone() == 'nil', 'a snapped window resized by hand reports no zone, so the side key snaps again', zone())
+    snap('right'); push('right')
+    check(snap('restore') == 'true' and ws() == 2 and now() == original,
+          'Win+Down after a push restores the pre-snap box on the new workspace', (now(), ws()))
+
     if not titlebars:
         print('titlebar plugin not available: drag scenarios skipped', file=sys.stderr)
         return
@@ -289,6 +312,13 @@ def run(nested, ptr, titlebars):
     check(after[0] - BORDER <= 1200 <= after[0] + after[2] + BORDER and after[1] - TOP <= 300 <= after[1],
           'the cursor stays on the titlebar of the restored window', after)
     check(snap('restore') == 'true' and now() == after, 'the detached window has no record left', now())
+
+    # Pushed, then dragged away: free floating, on the workspace it is on now.
+    snap('right'); push('right')
+    pushed_ws = ws()
+    sx, sy = titlebar_point(nested.client(t))
+    ptr.path((sx, sy), (sx + 40, sy + 40), (1200, 300))
+    check(now()[2:] == original[2:] and ws() == pushed_ws, 'a pushed window dragged away gets its size back on its new workspace', (now(), ws()))
 
     # A window resized after snapping keeps its size when dragged.
     pre_snap = now()

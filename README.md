@@ -4,9 +4,10 @@ Window snapping for floating windows on Hyprland, made for Omarchy's floating wo
 
 - **Drag to an edge** to snap: left/right halves, corner quarters, top to maximize. Optional thirds. A translucent preview shows where the window will go.
 - **Drag a snapped window away** and it gets its previous size back, under the cursor, and the drag carries on.
+- **Push past an edge**: with the `edgesnap.lua` key helper, pressing the same side again on a snapped window moves it to the next workspace over (created if needed), snapped to the opposite half.
 - **Keyboard** halves, maximize and restore share the same memory as the mouse: restore returns a window to its size and place from before its first snap, however it was snapped.
 
-It only snaps. Hyprland keeps owning the drag, maximize and fullscreen, so dragging by Super + drag, Omarchy's titlebar, or an X11 app's own titlebar (with [hypr-xcsd](https://github.com/LordMelkor/hypr-xcsd)) all work the same. It doesn't manage workspaces, titlebars, borders or resizing.
+It only snaps. Hyprland keeps owning the drag, maximize and fullscreen, so dragging by Super + drag, Omarchy's titlebar, or an X11 app's own titlebar (with [hypr-xcsd](https://github.com/LordMelkor/hypr-xcsd)) all work the same. It doesn't manage workspaces, titlebars, borders or resizing; the optional push hands the window to the desktop's own move-to-workspace.
 
 The zone detection, zone geometry and preview animation come from the MIT-licensed snap module of [omarchy-windows](https://github.com/jwm3000/omarchy-windows) (`contrib/aero-snap`), cut down to snapping and reworked so keyboard and mouse share one record per window. See `LICENSE`.
 
@@ -44,15 +45,18 @@ To rebuild after Hyprland updates, use an Omarchy post-update hook that runs `hy
 
 ### Keyboard
 
-The plugin adds four Lua functions. Each acts on the focused window and returns whether it handled it:
+The plugin adds five Lua functions. Each acts on the focused window and returns whether it handled it:
 
 | Function | Does |
 |---|---|
 | `hl.plugin.edgesnap.left()` / `right()` | snap to the left/right half (always halves) |
 | `hl.plugin.edgesnap.maximize()` | native maximize, the same as the titlebar button |
 | `hl.plugin.edgesnap.restore()` | leave maximize/fullscreen; if snapped, go back to the pre-snap size and place |
+| `hl.plugin.edgesnap.zone()` | `"left"` or `"right"` while the focused window still sits in that half, else `nil` |
 
-`edgesnap.lua` has a `bind` helper with example bindings. Omarchy uses Super + arrows for focus, so pick free keys. The helper can fall back to a shell command when the plugin isn't loaded.
+`edgesnap.lua` returns a module whose `snap("left")` / `snap("right")` add the push: on a window already in that half it moves the window one workspace over and snaps it to the other half there. It uses Omarchy's per-monitor workspaces (`o.workspaces`) when present and Hyprland's numbered workspaces otherwise. `push_limit` (default `5`, matching the five slots Omarchy's bar always shows; `false` for none) is the highest slot, or workspace number without Omarchy, a push may reach. The plugin itself never moves a window between workspaces.
+
+`edgesnap.lua` has a `bind` helper (left/right go through `snap`) with example bindings. Omarchy uses Super + arrows for focus, so pick free keys. The helper can fall back to a shell command when the plugin isn't loaded.
 
 ## Options
 
